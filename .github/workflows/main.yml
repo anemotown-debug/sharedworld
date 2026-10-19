@@ -1,0 +1,28 @@
+name: Build 26.3
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Build jar
+        working-directory: packages/fabric/modern
+        run: |
+          chmod +x ./gradlew
+          ./gradlew build -x test -PsharedworldMcBucket=26.3 --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sharedworld-26.3-jar
+          path: packages/fabric/modern/build/libs/*.jar
