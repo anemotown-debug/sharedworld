@@ -2,7 +2,7 @@
   "//": "Single source of truth for the version-bucket matrix. Consumed by build.gradle (classic), modern/build.gradle, neoforge/build.gradle, and scripts/verify/buckets.ts in the workspace repo. Adding a bucket means editing THIS file plus creating src/versioned/<name>/.",
   "defaults": {
     "classic": "1.21.11",
-    "modern": "26.1"
+    "modern": "26.3"
   },
   "testedE4mc": {
     "classic": "6.2.1",
@@ -199,9 +199,34 @@
       "project": "modern",
       "minecraftVersion": "26.2",
       "fabricApiVersion": "0.156.0+26.2",
-      "minecraftRange": ">=26.2 <27",
+      "minecraftRange": ">=26.2 <26.3",
       "claimedVersions": [
         "26.2"
+      ],
+      "javaRelease": 25,
+      "sharedVersionedDirs": [
+        "1.21.1-plus",
+        "1.21.11-plus",
+        "1.21.6-plus",
+        "1.21.9-plus",
+        "26.1-plus",
+        "all"
+      ],
+      "sharedVersionedTestDirs": [
+        "1.21.1-plus",
+        "1.21.11-plus",
+        "1.21.6-plus",
+        "all"
+      ]
+    },
+    {
+      "name": "26.3",
+      "project": "modern",
+      "minecraftVersion": "26.3",
+      "fabricApiVersion": "0.161.0+26.3",
+      "minecraftRange": ">=26.3 <27",
+      "claimedVersions": [
+        "26.3"
       ],
       "javaRelease": 25,
       "sharedVersionedDirs": [
