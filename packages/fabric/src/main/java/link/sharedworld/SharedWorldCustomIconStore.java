@@ -5,9 +5,6 @@ import link.sharedworld.api.SharedWorldModels.SignedBlobUrlDto;
 import link.sharedworld.api.SharedWorldModels.WorldSummaryDto;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.FaviconTexture;
-import org.lwjgl.PointerBuffer;
-import org.lwjgl.system.MemoryStack;
-import org.lwjgl.util.tinyfd.TinyFileDialogs;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -66,19 +63,7 @@ public final class SharedWorldCustomIconStore {
     }
 
     public SelectedIcon chooseIcon() throws IOException {
-        String selectedPath;
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            PointerBuffer patterns = stack.mallocPointer(1);
-            patterns.put(stack.UTF8("*.png"));
-            patterns.flip();
-            selectedPath = TinyFileDialogs.tinyfd_openFileDialog(
-                    "Choose Shared World Icon",
-                    "",
-                    patterns,
-                    null,
-                    false
-            );
-        }
+        String selectedPath = NativeFileDialogs.openFile("Choose Shared World Icon", "", "*.png");
         if (selectedPath == null || selectedPath.isBlank()) {
             return null;
         }

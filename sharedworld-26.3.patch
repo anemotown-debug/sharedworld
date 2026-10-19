@@ -1,0 +1,400 @@
+diff --git a/packages/fabric/README.md b/packages/fabric/README.md
+index 21d83e8..5eb72f8 100644
+--- a/packages/fabric/README.md
++++ b/packages/fabric/README.md
+@@ -6,7 +6,7 @@ backend for session ownership, sync, invites, and recovery.
+ 
+ ## Current Support
+ 
+-- SharedWorld builds one jar per Minecraft bucket: `1.20.1`, `1.21.1`, `1.21.6`, `1.21.9`, `1.21.11` (default), and `26.1`/`26.2` (modern project, -PsharedworldMcBucket selects)
++- SharedWorld builds one jar per Minecraft bucket: `1.20.1`, `1.21.1`, `1.21.6`, `1.21.9`, `1.21.11` (default), and `26.1`/`26.2`/`26.3` (modern project, -PsharedworldMcBucket selects)
+ - The validated stable pair is `Minecraft 1.21.11 + e4mc 6.1.0-fabric`
+ - Older `e4mc` builds such as `6.0.6` are historical reference points, not the
+   current support promise
+diff --git a/packages/fabric/buckets.json b/packages/fabric/buckets.json
+index 54ca568..b5d58a1 100644
+--- a/packages/fabric/buckets.json
++++ b/packages/fabric/buckets.json
+@@ -2,7 +2,7 @@
+   "//": "Single source of truth for the version-bucket matrix. Consumed by build.gradle (classic), modern/build.gradle, neoforge/build.gradle, and scripts/verify/buckets.ts in the workspace repo. Adding a bucket means editing THIS file plus creating src/versioned/<name>/.",
+   "defaults": {
+     "classic": "1.21.11",
+-    "modern": "26.1"
++    "modern": "26.3"
+   },
+   "testedE4mc": {
+     "classic": "6.2.1",
+@@ -199,7 +199,7 @@
+       "project": "modern",
+       "minecraftVersion": "26.2",
+       "fabricApiVersion": "0.156.0+26.2",
+-      "minecraftRange": ">=26.2 <27",
++      "minecraftRange": ">=26.2 <26.3",
+       "claimedVersions": [
+         "26.2"
+       ],
+@@ -218,6 +218,31 @@
+         "1.21.6-plus",
+         "all"
+       ]
++    },
++    {
++      "name": "26.3",
++      "project": "modern",
++      "minecraftVersion": "26.3",
++      "fabricApiVersion": "0.161.0+26.3",
++      "minecraftRange": ">=26.3 <27",
++      "claimedVersions": [
++        "26.3"
++      ],
++      "javaRelease": 25,
++      "sharedVersionedDirs": [
++        "1.21.1-plus",
++        "1.21.11-plus",
++        "1.21.6-plus",
++        "1.21.9-plus",
++        "26.1-plus",
++        "all"
++      ],
++      "sharedVersionedTestDirs": [
++        "1.21.1-plus",
++        "1.21.11-plus",
++        "1.21.6-plus",
++        "all"
++      ]
+     }
+   ]
+ }
+diff --git a/packages/fabric/modern/gradle.properties b/packages/fabric/modern/gradle.properties
+index a52d5ae..2a722c0 100644
+--- a/packages/fabric/modern/gradle.properties
++++ b/packages/fabric/modern/gradle.properties
+@@ -2,7 +2,7 @@ org.gradle.jvmargs=-Xmx1G
+ org.gradle.parallel=true
+ org.gradle.configuration-cache=false
+ 
+-loader_version=0.19.3
++loader_version=0.19.5
+ loom_version=1.16.3
+ 
+ mod_version=0.5.3
+diff --git a/packages/fabric/src/devhelperVersioned/26.3/java/link/sharedworld/devhelper/mixin/ServerLoginPacketListenerDevHelperMixin.java b/packages/fabric/src/devhelperVersioned/26.3/java/link/sharedworld/devhelper/mixin/ServerLoginPacketListenerDevHelperMixin.java
+new file mode 100644
+index 0000000..6b34433
+--- /dev/null
++++ b/packages/fabric/src/devhelperVersioned/26.3/java/link/sharedworld/devhelper/mixin/ServerLoginPacketListenerDevHelperMixin.java
+@@ -0,0 +1,47 @@
++package link.sharedworld.devhelper.mixin;
++
++import link.sharedworld.RuntimePlayerIdentity;
++import link.sharedworld.SharedWorldDevHelperPolicy;
++import link.sharedworld.devhelper.DevHelperE2ePolicy;
++import net.minecraft.network.Connection;
++import net.minecraft.network.protocol.login.ServerboundHelloPacket;
++import net.minecraft.server.network.ServerLoginPacketListenerImpl;
++import org.spongepowered.asm.mixin.Final;
++import org.spongepowered.asm.mixin.Mixin;
++import org.spongepowered.asm.mixin.Shadow;
++import org.spongepowered.asm.mixin.injection.At;
++import org.spongepowered.asm.mixin.injection.Inject;
++import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
++
++@Mixin(ServerLoginPacketListenerImpl.class)
++public abstract class ServerLoginPacketListenerDevHelperMixin {
++    @Shadow
++    @Final
++    Connection connection;
++
++    @Shadow
++    abstract void startClientVerification(com.mojang.authlib.GameProfile gameProfile);
++
++    // 26.x handleHello short-circuits earlier when the hello username matches the
++    // singleplayer owner's; the guest's fake profile never does, so this injection
++    // point (right before the usesAuthentication check) still covers the dev flow.
++    @Inject(
++            method = "handleHello",
++            at = @At(
++                    value = "INVOKE",
++                    target = "Lnet/minecraft/server/MinecraftServer;usesAuthentication()Z"
++            ),
++            cancellable = true
++    )
++    private void sharedworld$allowLocalFakeDialtoneLogin(ServerboundHelloPacket packet, CallbackInfo callbackInfo) {
++        String remoteAddressClassName = this.connection.getRemoteAddress().getClass().getName();
++        boolean dialtoneBypass = SharedWorldDevHelperPolicy.shouldAllowInsecureDialtoneBypass(remoteAddressClassName);
++        boolean e2eLoopbackBypass = DevHelperE2ePolicy.shouldAllowInsecureLoopbackBypass(this.connection.getRemoteAddress());
++        if (!dialtoneBypass && !e2eLoopbackBypass) {
++            return;
++        }
++
++        this.startClientVerification(RuntimePlayerIdentity.insecureDialtoneProfile(packet));
++        callbackInfo.cancel();
++    }
++}
+diff --git a/packages/fabric/src/devhelperVersioned/26.3/java/link/sharedworld/devhelper/mixin/WindowDevHelperMixin.java b/packages/fabric/src/devhelperVersioned/26.3/java/link/sharedworld/devhelper/mixin/WindowDevHelperMixin.java
+new file mode 100644
+index 0000000..5b83a08
+--- /dev/null
++++ b/packages/fabric/src/devhelperVersioned/26.3/java/link/sharedworld/devhelper/mixin/WindowDevHelperMixin.java
+@@ -0,0 +1,36 @@
++package link.sharedworld.devhelper.mixin;
++
++import link.sharedworld.devhelper.DevHelperWindowPolicy;
++import net.minecraft.client.Minecraft;
++import org.lwjgl.glfw.GLFW;
++import org.spongepowered.asm.mixin.Mixin;
++import org.spongepowered.asm.mixin.injection.At;
++import org.spongepowered.asm.mixin.injection.Redirect;
++
++/**
++ * Keeps the game window invisible when SHAREDWORLD_HIDE_WINDOW is set, so
++ * automated runs never flash a window during boot (the tick-time hide in
++ * DevHelperClient only lands once the client is already up).
++ *
++ * On 26.2 the window is already created hidden (Window.createGlfwWindow
++ * hints GLFW_VISIBLE=false) and the Minecraft constructor shows it
++ * explicitly once client init finishes, so here the fix is suppressing
++ * that one glfwShowWindow call instead of adding a creation hint.
++ */
++@Mixin(Minecraft.class)
++public abstract class WindowDevHelperMixin {
++    @Redirect(
++            method = "<init>",
++            at = @At(
++                    value = "INVOKE",
++                    target = "Lorg/lwjgl/glfw/GLFW;glfwShowWindow(J)V",
++                    remap = false
++            )
++    )
++    private void sharedworld$maybeShowWindow(long windowHandle) {
++        if (DevHelperWindowPolicy.hideWindowRequested()) {
++            return;
++        }
++        GLFW.glfwShowWindow(windowHandle);
++    }
++}
+diff --git a/packages/fabric/src/versioned/26.3/java/link/sharedworld/versioned/ClientCompat.java b/packages/fabric/src/versioned/26.3/java/link/sharedworld/versioned/ClientCompat.java
+new file mode 100644
+index 0000000..e243dee
+--- /dev/null
++++ b/packages/fabric/src/versioned/26.3/java/link/sharedworld/versioned/ClientCompat.java
+@@ -0,0 +1,93 @@
++package link.sharedworld.versioned;
++
++import net.minecraft.client.Minecraft;
++
++/** Version-specific client entry points whose location moved across Minecraft versions. */
++public final class ClientCompat {
++    private ClientCompat() {
++    }
++
++    public static void disconnectFromWorld(Minecraft minecraft) {
++        minecraft.disconnectFromWorld(null);
++    }
++
++    public static void drawDeferredSubtitles(Minecraft minecraft) {
++        // 26.2 moved deferred subtitle rendering into the Hud pipeline; screens
++        // no longer trigger it manually.
++    }
++
++    /**
++     * The Mojang-signed profile keypair (chat-signing certificate) backing
++     * SharedWorld certificate auth, or empty when the account has none
++     * (offline profile, certificate-blocking mods).
++     */
++    public static java.util.Optional<link.sharedworld.api.ProfileCertificateData> profileCertificate(Minecraft minecraft)
++            throws InterruptedException, java.util.concurrent.ExecutionException, java.util.concurrent.TimeoutException {
++        return minecraft.getProfileKeyPairManager().prepareKeyPair()
++                .get(10, java.util.concurrent.TimeUnit.SECONDS)
++                .map(pair -> new link.sharedworld.api.ProfileCertificateData(
++                        pair.privateKey(),
++                        pair.publicKey().data().key().getEncoded(),
++                        pair.publicKey().data().expiresAt().toEpochMilli(),
++                        pair.publicKey().data().keySignature()));
++    }
++
++    public static java.util.UUID profileId(com.mojang.authlib.GameProfile profile) {
++        return profile.id();
++    }
++
++    public static String profileName(com.mojang.authlib.GameProfile profile) {
++        return profile.name();
++    }
++
++    /** The running client's world data version, or a permissive maximum when undetectable. */
++    public static int currentDataVersion() {
++        try {
++            net.minecraft.WorldVersion version = net.minecraft.SharedConstants.getCurrentVersion();
++            return version == null ? Integer.MAX_VALUE : version.dataVersion().version();
++        } catch (RuntimeException | LinkageError exception) {
++            // Headless/undetected version: never block on an unknowable comparison.
++            return Integer.MAX_VALUE;
++        }
++    }
++
++    /** The running client's Minecraft version name (for example "1.21.11"), or null. */
++    public static String currentMinecraftVersion() {
++        try {
++            net.minecraft.WorldVersion version = net.minecraft.SharedConstants.getCurrentVersion();
++            return version == null ? null : version.name();
++        } catch (RuntimeException | LinkageError exception) {
++            return null;
++        }
++    }
++
++    /** Show a screen; screen management moved off Minecraft in newer versions. */
++    public static void setScreen(Minecraft minecraft, net.minecraft.client.gui.screens.Screen screen) {
++        minecraft.setScreenAndShow(screen);
++    }
++
++    /** The currently displayed screen, or null when none is open. */
++    public static net.minecraft.client.gui.screens.Screen currentScreen(Minecraft minecraft) {
++        return minecraft.gui.screen();
++    }
++
++    /**
++     * Whether the screen belongs to the vanilla world-entry flow (world selection/creation,
++     * connecting, level loading). SharedWorld lifecycle screens must never be forced over these.
++     */
++    public static boolean isWorldEntryScreen(net.minecraft.client.gui.screens.Screen screen) {
++        return screen instanceof net.minecraft.client.gui.screens.worldselection.SelectWorldScreen
++            || screen instanceof net.minecraft.client.gui.screens.worldselection.CreateWorldScreen
++            || screen instanceof net.minecraft.client.gui.screens.ConnectScreen
++            || screen instanceof net.minecraft.client.gui.screens.LevelLoadingScreen
++            || screen instanceof net.minecraft.client.gui.screens.ProgressScreen
++            || screen instanceof net.minecraft.client.gui.screens.GenericMessageScreen;
++    }
++
++    /** Show a system chat line on the local client (autosave health warnings). */
++    public static void showChatMessage(Minecraft minecraft, net.minecraft.network.chat.Component message) {
++        if (minecraft.gui != null) {
++            minecraft.gui.chatListener().handleSystemMessage(message, false);
++        }
++    }
++}
+diff --git a/packages/fabric/src/versioned/26.3/java/link/sharedworld/versioned/ServerPublishCompat.java b/packages/fabric/src/versioned/26.3/java/link/sharedworld/versioned/ServerPublishCompat.java
+new file mode 100644
+index 0000000..f13fa4c
+--- /dev/null
++++ b/packages/fabric/src/versioned/26.3/java/link/sharedworld/versioned/ServerPublishCompat.java
+@@ -0,0 +1,16 @@
++package link.sharedworld.versioned;
++
++import net.minecraft.client.server.IntegratedServer;
++import net.minecraft.server.MinecraftServer;
++import net.minecraft.world.level.GameType;
++
++/** Version-specific LAN publish; 26.2 adds a multiplayer-scope parameter. */
++public final class ServerPublishCompat {
++    private ServerPublishCompat() {
++    }
++
++    /** Publish without forcing a game mode (null keeps each player's stored mode) and without cheats. */
++    public static boolean publish(IntegratedServer server, GameType gameMode, int port) {
++        return server.publishServer(MinecraftServer.MultiplayerScope.LAN, gameMode, false, port);
++    }
++}
+diff --git a/packages/fabric/src/versioned/26.3/java/link/sharedworld/versioned/TabBarCompat.java b/packages/fabric/src/versioned/26.3/java/link/sharedworld/versioned/TabBarCompat.java
+new file mode 100644
+index 0000000..a086157
+--- /dev/null
++++ b/packages/fabric/src/versioned/26.3/java/link/sharedworld/versioned/TabBarCompat.java
+@@ -0,0 +1,28 @@
++package link.sharedworld.versioned;
++
++import net.minecraft.client.gui.components.tabs.MenuTabBar;
++import net.minecraft.client.gui.components.tabs.TabNavigationBar;
++
++/** Version-specific tab-bar control; 26.2 replaced the builder with MenuTabBar. */
++public final class TabBarCompat {
++    private TabBarCompat() {
++    }
++
++    public static void setTabActive(TabNavigationBar tabNavigationBar, int index, boolean active) {
++        tabNavigationBar.setTabActiveState(index, active);
++    }
++
++    /** Build the standard tab bar; the concrete bar class changed in newer versions. */
++    public static TabNavigationBar create(
++            net.minecraft.client.gui.components.tabs.TabManager tabManager,
++            int width,
++            net.minecraft.client.gui.components.tabs.Tab... tabs
++    ) {
++        return MenuTabBar.builder(tabManager, width).addTabs(tabs).build();
++    }
++
++    /** Resize and re-layout the bar; newer versions fold both into one call. */
++    public static void arrange(TabNavigationBar tabNavigationBar, int width) {
++        tabNavigationBar.arrangeElements(width);
++    }
++}
+diff --git a/packages/fabric/src/versioned/26.3/java/link/sharedworld/versioned/VersionedTab.java b/packages/fabric/src/versioned/26.3/java/link/sharedworld/versioned/VersionedTab.java
+new file mode 100644
+index 0000000..f6e7f8a
+--- /dev/null
++++ b/packages/fabric/src/versioned/26.3/java/link/sharedworld/versioned/VersionedTab.java
+@@ -0,0 +1,39 @@
++package link.sharedworld.versioned;
++
++import net.minecraft.client.gui.components.tabs.Tab;
++import net.minecraft.network.chat.Component;
++
++/**
++ * Version-neutral base for SharedWorld tabs: getTabExtraNarration is not part of the Tab
++ * interface on every supported version, so shared tabs implement the sharedworld* hook and
++ * this per-version base wires it up where vanilla supports it.
++ */
++public abstract class VersionedTab implements Tab {
++    protected Component sharedworldTabExtraNarration() {
++        return Component.empty();
++    }
++
++    @Override
++    public Component getTabExtraNarration() {
++        return this.sharedworldTabExtraNarration();
++    }
++
++    // 26.2 added getLayout() to the Tab interface for layout-driven tabs.
++    // SharedWorld tabs position their widgets manually in doLayout, so an
++    // empty frame satisfies the contract without affecting layout.
++    private final net.minecraft.client.gui.layouts.FrameLayout sharedworldEmptyLayout =
++            new net.minecraft.client.gui.layouts.FrameLayout();
++
++    @Override
++    public net.minecraft.client.gui.layouts.Layout getLayout() {
++        return this.sharedworldEmptyLayout;
++    }
++
++    /** Hands a selection list to the tab manager where lists are widgets. */
++    protected final void sharedworldVisitListChild(
++            java.util.function.Consumer<net.minecraft.client.gui.components.AbstractWidget> consumer,
++            VersionedSelectionList<?> list
++    ) {
++        consumer.accept(list);
++    }
++}
+diff --git a/packages/fabric/src/versioned/26.3/resources/sharedworld-versioned.mixins.json b/packages/fabric/src/versioned/26.3/resources/sharedworld-versioned.mixins.json
+new file mode 100644
+index 0000000..d522f4c
+--- /dev/null
++++ b/packages/fabric/src/versioned/26.3/resources/sharedworld-versioned.mixins.json
+@@ -0,0 +1,19 @@
++{
++  "required": true,
++  "package": "link.sharedworld.mixin.versioned",
++  "compatibilityLevel": "JAVA_21",
++  "client": [
++    "ChatComponentMixin",
++    "DimensionDataStorageAccessor",
++    "DisconnectedScreenReasonAccessor",
++    "EntityStorageAccessor",
++    "MinecraftDisconnectMixin",
++    "MinecraftServerHostPermissionMixin",
++    "MultiplayerScreenMixin",
++    "PersistentEntitySectionManagerAccessor",
++    "ServerLevelEntityManagerAccessor"
++  ],
++  "injectors": {
++    "defaultRequire": 1
++  }
++}

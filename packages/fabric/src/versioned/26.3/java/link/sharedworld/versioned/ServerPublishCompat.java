@@ -4,13 +4,13 @@ import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.GameType;
 
-/** Version-specific LAN publish; 26.2 adds a multiplayer-scope parameter. */
+/** Version-specific LAN publish; 26.3 dropped the game-mode parameter from publishServer. */
 public final class ServerPublishCompat {
     private ServerPublishCompat() {
     }
 
-    /** Publish without forcing a game mode (null keeps each player's stored mode) and without cheats. */
+    /** Publish without cheats. gameMode is ignored on 26.3 (SharedWorld always passes null). */
     public static boolean publish(IntegratedServer server, GameType gameMode, int port) {
-        return server.publishServer(MinecraftServer.MultiplayerScope.LAN, gameMode, false, port);
+        return server.publishServer(MinecraftServer.MultiplayerScope.LAN, false, port);
     }
 }

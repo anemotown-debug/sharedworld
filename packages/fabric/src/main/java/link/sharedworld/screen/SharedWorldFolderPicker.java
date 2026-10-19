@@ -1,7 +1,7 @@
 package link.sharedworld.screen;
 
 import net.minecraft.client.Minecraft;
-import org.lwjgl.util.tinyfd.TinyFileDialogs;
+import link.sharedworld.NativeFileDialogs;
 
 import java.nio.file.Path;
 
@@ -37,7 +37,7 @@ final class SharedWorldFolderPicker {
 
     static Path chooseFolder(String title) {
         String defaultPath = Minecraft.getInstance().gameDirectory.toPath().resolve("saves").toAbsolutePath() + java.io.File.separator;
-        String selected = TinyFileDialogs.tinyfd_selectFolderDialog(title, defaultPath);
+        String selected = NativeFileDialogs.selectFolder(title, defaultPath);
         return selected == null || selected.isBlank() ? null : Path.of(selected);
     }
 }
